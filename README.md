@@ -1,6 +1,6 @@
-# Consentia — GenAI Medical Consent & Patient Rights Navigator
+# Consentia — Medical Consent & Patient Rights Navigator
 
-> **Empowering patients and caregivers to understand medical consent forms, hospital paperwork, insurance denial letters, and billing disputes before signing, appealing, or agreeing to anything.**
+> **A GenAI-powered healthcare document navigator that helps patients and caregivers understand consent forms, insurance decisions, billing documents, and patient-rights information.**
 
 ---
 
@@ -8,43 +8,88 @@
 
 **Consentia provides clear explanations and preparation tools to empower you. It does not replace professional legal or medical advice.**
 
-A persistent, human-first one-liner disclaimer is embedded across all user interfaces.
+A persistent, human-first one-liner disclaimer is embedded across all user interfaces:
+> *"Patient Navigator Disclaimer: Consentia provides clear explanations and preparation tools to empower you. It does not replace professional legal or medical advice."*
 
 ---
 
 ## 🏥 Problem Statement
 
-When faced with complex surgical consent forms, unexpected out-of-network hospital bills, or insurance denial letters, patients and caregivers are often confused and anxious in hospital waiting rooms. Traditional legal boilerplate is intimidating, packed with binding arbitration waivers, liability releases, and strict deadlines.
+Healthcare paperwork—such as surgical consent forms, hospital billing statements, procedure waivers, and insurance claim denial letters—is notoriously complex. Filled with legal legalese, medical terminology, binding arbitration clauses, liability waivers, and strict appeal deadlines, these documents are presented to patients and caregivers who are often stressed and confused in hospital waiting rooms.
 
-**Consentia** solves this problem by acting as a calm, clear, and empathetic patient navigator. Written in a tone resembling a smart friend who understands medical paperwork, it simplifies legalese into actionable insights and personalized question checklists.
+Without specialized assistance, patients risk forfeiting their appeal rights, assuming unexpected out-of-network balance billing, or signing away rights to dispute medical errors.
+
+---
+
+## 💡 Solution: Understand → Identify → Ask → Prepare
+
+Consentia acts as a calm, empathetic patient navigator. Written in a tone resembling a knowledgeable friend who understands medical paperwork, it guides patients through a structured four-stage preparation workflow:
+
+1. **Understand**: Translates dense legalese into plain-language, section-by-section summaries with clear one-line takeaways.
+2. **Identify**: Automatically flags potential risk areas (binding arbitration, liability waivers, 30-day appeal windows, out-of-network balance billing).
+3. **Ask**: Generates a personalized, interactive checklist of questions to bring to doctors, billing offices, or insurance representatives.
+4. **Prepare**: Provides a tailored Patient Rights Snapshot and an interactive **"What Happens If?"** scenario explainer for real-world consequence analysis.
 
 ---
 
 ## 🤖 GenAI Architecture & Explicit Service Mapping
 
-Consentia utilizes Google Gemini (`gemini-2.5-flash`) via `@google/genai` to power four distinct, specialized intelligence engines. Each integration point is explicitly defined in backend services (`server/services/genai.js`):
+Consentia utilizes Google Gemini (`gemini-2.5-flash`) via the official `@google/genai` SDK to power **FIVE** distinct, specialized intelligence services. Each integration point is explicitly defined in backend services (`server/services/genai.js`):
 
-| GenAI Engine | Integration Point | Input | Output Payload Structure |
-| :--- | :--- | :--- | :--- |
-| **1. Document Simplification Engine** | `simplifyDocument(rawText)` | Raw document text (consent form, denial letter, bill) | `{ documentCategory, overallSummary, sections: [{ title, originalSnippet, plainLanguage, bottomLineTakeaway }] }` |
-| **2. Risk & Clause Detection Engine** | `detectRisks(rawText)` | Raw document text | Array of flagged risk objects: `[{ clauseType, severity ('high' \| 'medium' \| 'info'), quotedText, explanation, whatHappensIfClicked }]` |
-| **3. Question & Checklist Generator** | `generateChecklist(rawText, risks)` | Parsed text + detected risks array | `{ summaryTip, categories: [{ title, target, questions: [...] }] }` |
-| **4. Patient Rights Summary Generator** | `generatePatientRights(rawText)` | Document category & context | `{ documentCategory, disclaimer, rightsList: [{ right, details }] }` |
-
-*Note: Consentia also includes an interactive **"What Happens If" Explainer** endpoint (`explainScenario(clause, question)`) for real-world consequence analysis.*
-
----
-
-## 🎨 Design Direction
-
-- **No AI Clichés**: Avoids purple-to-blue gradients, dark-mode neon glowing accents, generic chat bubbles, and rigid card grids.
-- **Warm Grounded Palette**: Uses warm healthcare tones — Terracotta (`#c85a32`), Warm Cream/Paper (`#f6f2ea`), Deep Slate (`#0f172a`), Sage Green (`#4a6b5d`), and Amber (`#d97706`).
-- **Dynamic Asymmetric Layout**: Rethinks screen arrangements at different breakpoints with an asymmetric dual-column desktop layout and stacked drawer views.
-- **Interactive Motion**: Framer Motion transitions during document analysis, section toggling, and interactive "What Happens If" modal launcher.
+| GenAI Engine Service | Backend Function | Purpose | Input | Output Structure |
+| :--- | :--- | :--- | :--- | :--- |
+| **1. Document Simplification Engine** | `simplifyDocument(rawText)` | Converts complex document text into structured plain-language explanations. | Raw document text | `{ documentCategory, overallSummary, sections: [{ title, originalSnippet, plainLanguage, bottomLineTakeaway }] }` |
+| **2. Risk & Clause Detection Engine** | `detectRisks(rawText)` | Identifies clauses that deserve attention (arbitration, waivers, balance billing, deadlines). | Raw document text | Array of flagged clause objects: `[{ clauseType, severity ('high' \| 'medium' \| 'info'), quotedText, explanation, whatHappensIfClicked }]` |
+| **3. Question Checklist Generator** | `generateChecklist(rawText, risks)` | Generates actionable, categorized questions based on document text and detected risks. | Raw document + detected risks | `{ summaryTip, categories: [{ title, target, questions: [...] }] }` |
+| **4. Patient Rights Summary Generator** | `generatePatientRights(rawText)` | Generates general educational information about relevant patient rights based on document context. | Raw document text | `{ documentCategory, disclaimer, rightsList: [{ right, details }] }` |
+| **5. Interactive Scenario Explainer** | `explainScenario(clause, question)` | Answers user "What happens if?" scenario questions based on specific clauses. | Clause snippet + user question | `{ scenario, consequence, actionSteps: [...] }` |
 
 ---
 
-## 🚀 Quick Setup & Installation
+## 🔄 End-to-End Architecture & Data Flow
+
+```
+React 18 UI (Vite + Tailwind + Framer Motion)
+      │
+      ▼ HTTP POST (JSON Payload)
+Node.js Express Backend (/api/analyze & /api/what-if)
+      │
+      ├──▶ 1. simplifyDocument()
+      ├──▶ 2. detectRisks()
+      ├──▶ 3. generateChecklist()      ────▶ Google Gemini 2.5 Flash (@google/genai)
+      ├──▶ 4. generatePatientRights()
+      └──▶ 5. explainScenario()
+      │
+      ▼ Structured JSON Response
+React UI (Asymmetric Dynamic Workspace Canvas)
+```
+
+### 🛡️ Dual-Execution Architecture: GenAI vs. Local Heuristic Fallback Engine
+- **Primary GenAI Mode**: Powered by Google Gemini (`gemini-2.5-flash`) via `@google/genai` when a valid `GEMINI_API_KEY` is configured.
+- **Local Heuristic Fallback Engine**: If Gemini is unavailable, unconfigured, or experiences network rate limits, Consentia automatically switches to its **Local Heuristic Fallback Engine** (`server/services/fallbackEngine.js`).
+  *Note: The local fallback engine uses deterministic rule-based parsing and is explicitly documented as separate from the GenAI path. It ensures 100% demonstration resilience and offline availability.*
+
+---
+
+## 🛠️ Technology Stack
+
+- **Frontend**: React 18, Vite, Tailwind CSS, Framer Motion, Lucide Icons.
+- **Backend**: Node.js, Express.js.
+- **GenAI SDK**: `@google/genai` (Google Gemini 2.5 Flash).
+- **Deployment**: Render / Vercel.
+
+---
+
+## ⚖️ Responsible AI & Ethical Safety Boundaries
+
+- **No Professional Advice**: Consentia provides general educational assistance and document navigation. It does NOT provide legal advice or medical diagnoses.
+- **Non-Definitive Phrasing**: Detected risks use non-definitive wording (*"May require additional attention"*, *"Potential area to clarify"*, *"Consider asking about..."*) rather than claiming a clause is illegal.
+- **Jurisdiction Awareness**: Patient rights information is clearly framed: *"General educational information. Applicable rights may depend on jurisdiction, insurance coverage, circumstances, and the specific document."*
+- **No Fabricated Statutes**: The system does not manufacture legal citations or fake case law.
+
+---
+
+## 🚀 Quick Setup & Local Installation
 
 ### Prerequisites
 - Node.js v18 or later
@@ -53,50 +98,47 @@ Consentia utilizes Google Gemini (`gemini-2.5-flash`) via `@google/genai` to pow
 
 1. Clone the repository and install dependencies:
 ```bash
+git clone https://github.com/abi131205/consentia.git
+cd consentia
 npm install
 ```
 
-2. (Optional) Set up your Gemini API key in a `.env` file:
+2. Configure environment variables (create a `.env` file):
 ```env
-GEMINI_API_KEY=your_gemini_api_key_here
+GEMINI_API_KEY=your_google_gemini_api_key_here
 PORT=5000
 ```
-*Note: If no API key is provided, Consentia automatically operates in a high-fidelity Heuristic Fallback Mode so all features work seamlessly out-of-the-box.*
+*(If no API key is provided, Consentia operates via its built-in Local Heuristic Fallback Engine).*
 
-3. Start the application:
+3. Run the application locally:
 
-**Build and run production server:**
+**Production Mode (Single Server):**
 ```bash
 npm run build
-npm run server
+npm start
 ```
 
-**Development mode:**
-Run backend server and Vite frontend concurrently:
+**Development Mode (Live Reload):**
 ```bash
 # Terminal 1: Backend API
 npm run server
 
-# Terminal 2: Frontend Vite Dev Server
+# Terminal 2: Frontend Dev Server
 npm run dev
 ```
 
-Open your browser at `http://localhost:3000` (or `http://localhost:5000` in production).
-
----
-
-## 📄 Sample Test Documents Included
-
-For live demo entry and evaluation, Consentia includes 4 realistic sample scenarios accessible via 1-click preset buttons:
-1. **General Surgical Informed Consent & Liability Release**
-2. **Commercial Health Plan Insurance Claim Denial Letter**
-3. **Out-of-Network Emergency Facility & Anesthesia Statement**
-4. **Out-of-Pocket Payment Agreement & Financial Guarantee**
+Open browser at `http://localhost:5000` (or `http://localhost:3000` for development).
 
 ---
 
 ## ⚡ Deployment
 
-Consentia is designed to deploy seamlessly to platforms like Vercel, Render, Railway, or Google Cloud Run.
-- Frontend build output: `dist/`
-- Backend entrypoint: `server/index.js`
+Consentia is live on Render:
+- **Live Application URL**: [https://consentia-tmh7.onrender.com/](https://consentia-tmh7.onrender.com/)
+- **GitHub Repository**: [https://github.com/abi131205/consentia](https://github.com/abi131205/consentia)
+
+---
+
+## 🎥 Demo Video
+
+Demo video: [ADD FINAL VIDEO LINK]

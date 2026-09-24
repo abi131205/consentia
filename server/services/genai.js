@@ -1,36 +1,37 @@
 /**
  * CONSENTIA GenAI ARCHITECTURE ENGINE
  * 
- * Explicit Mapping of GenAI Integration Points (Per Requirements):
+ * Explicit Mapping of the FIVE GenAI Integration Points (Per PromptWars 2026 Requirements):
  * 
  * 1. DOCUMENT SIMPLIFICATION ENGINE (simplifyDocument)
- *    - Input: Raw document text (medical consent, insurance denial, billing statement)
- *    - Output: Structured JSON containing:
- *        • documentCategory (e.g. Surgical Consent, Insurance Denial)
- *        • overallSummary (2-3 sentence calm explanation)
- *        • sections: Array of { title, originalSnippet, plainLanguage, bottomLineTakeaway }
+ *    - Function: simplifyDocument(rawText)
+ *    - Purpose: Convert complex document text into structured plain-language explanations.
+ *    - Input: Raw document text.
+ *    - Output: Structured JSON { documentCategory, overallSummary, sections: [{ title, originalSnippet, plainLanguage, bottomLineTakeaway }] }
  * 
- * 2. CLAUSE & RISK DETECTION ENGINE (detectRisks)
- *    - Input: Raw document text
- *    - Output: Array of flagged clause objects:
- *        • clauseType (e.g. Binding Arbitration, Financial Obligation, Strict Deadline)
- *        • severity ('high' | 'medium' | 'info')
- *        • quotedText (exact snippet from original text)
- *        • explanation (why this matters in plain terms)
- *        • whatHappensIfClicked (consequence summary for interactive explainer)
+ * 2. RISK & CLAUSE DETECTION ENGINE (detectRisks)
+ *    - Function: detectRisks(rawText)
+ *    - Purpose: Identify clauses that may deserve attention (arbitration, waivers, balance billing, deadlines).
+ *    - Input: Raw document text.
+ *    - Output: Array of flagged clause objects: [{ clauseType, severity ('high'|'medium'|'info'), quotedText, explanation, whatHappensIfClicked }]
  * 
- * 3. QUESTION & CHECKLIST GENERATOR (generateChecklist)
- *    - Input: Parsed document summary + detected risks array
- *    - Output: Structured checklist object:
- *        • summaryTip (guidance on how to ask)
- *        • categories: Array of { title, target, questions: string[] }
+ * 3. QUESTION CHECKLIST GENERATOR (generateChecklist)
+ *    - Function: generateChecklist(rawText, risks)
+ *    - Purpose: Generate actionable questions based on the document and detected risks.
+ *    - Input: Raw document text + detected risks array.
+ *    - Output: Structured checklist object { summaryTip, categories: [{ title, target, questions: [...] }] }
  * 
  * 4. PATIENT RIGHTS SUMMARY GENERATOR (generatePatientRights)
- *    - Input: Document type/context
- *    - Output: Structured patient rights snapshot:
- *        • documentCategory
- *        • disclaimer (general educational statement)
- *        • rightsList: Array of { right, details }
+ *    - Function: generatePatientRights(rawText)
+ *    - Purpose: Generate general educational information about potentially relevant patient rights based on document context.
+ *    - Input: Raw document text.
+ *    - Output: Document-aware rights information { documentCategory, disclaimer, rightsList: [{ right, details }] }
+ * 
+ * 5. INTERACTIVE SCENARIO EXPLANATION ENGINE (explainScenario)
+ *    - Function: explainScenario(clause, question)
+ *    - Purpose: Answer a user's "What happens if?" question based on a specific clause and context.
+ *    - Input: Clause snippet + user question.
+ *    - Output: Dynamic step-by-step explanation { scenario, consequence, actionSteps: [...] }
  */
 
 import { GoogleGenAI } from '@google/genai';
@@ -40,7 +41,8 @@ import {
   fallbackDetectRisks, 
   fallbackGenerateChecklist, 
   fallbackPatientRights,
-  fallbackExplainScenario
+  fallbackExplainScenario,
+  isGibberishOrLowValue
 } from './fallbackEngine.js';
 
 dotenv.config();
@@ -51,42 +53,75 @@ let aiClient = null;
 if (apiKey) {
   try {
     aiClient = new GoogleGenAI({ apiKey });
-    console.log('[Consentia GenAI] Gemini API Client initialized successfully.');
+    console.log('[Consentia GenAI] Gemini API Client initialized successfully (@google/genai).');
   } catch (err) {
     console.warn('[Consentia GenAI] Failed to initialize Gemini API Client:', err.message);
   }
 } else {
-  console.log('[Consentia GenAI] No GEMINI_API_KEY provided. Operating in high-fidelity Heuristic Fallback Mode.');
+  console.log('[Consentia GenAI] No GEMINI_API_KEY provided. Operating in high-fidelity Local Heuristic Fallback Engine Mode.');
 }
 
+const MAX_INPUT_CHARS = 50000;
+
 /**
- * Common System Prompt specifying tone of voice and strict legal boundary
+ * Common System Instruction enforcing tone, safety boundaries, and non-definitive phrasing
  */
 const SYSTEM_INSTRUCTION = `
-You are Consentia, a compassionate, highly clear GenAI Medical Consent & Patient Rights Navigator.
-Your purpose is to help confused, anxious patients and caregivers understand complex medical paperwork, surgical consent forms, insurance denial letters, and billing statements.
+You are Consentia, a compassionate, clear GenAI Medical Consent & Patient Rights Navigator.
+Your purpose is to help patients and caregivers understand healthcare paperwork, surgical consent forms, insurance denial letters, and billing disputes before they sign or pay.
 
 TONE & VOICE REQUIREMENTS:
 - Calm, clear, respectful, and grounding. Never alarmist. Never condescending.
-- Write as if explaining something to a smart friend who is currently stressed in a hospital waiting room.
-- Avoid legal jargon; translate corporate and medical boilerplate into plain human speech.
-- Legal Boundary: Provide clear preparation and educational support without giving jurisdiction-specific legal or medical advice.
+- Write as if explaining something to a smart friend who is stressed in a hospital waiting room.
+- Translate legalese into plain human speech.
+
+SAFETY & LEGAL BOUNDARIES:
+- Educational & Preparation Support Only: Do NOT provide legal advice, medical advice, or clinical diagnoses.
+- Non-Definitive Phrasing: Do NOT state that any clause is definitely illegal or binding. Use careful phrasing such as "May require additional attention", "Potential area to clarify", "Consider asking about...", or "This clause may affect...".
+- Do NOT fabricate statutes, legal citations, or specific case law.
 `;
 
 /**
+ * Helper to sanitize and trim text safely
+ */
+function prepareInputText(text) {
+  if (!text || typeof text !== 'string') return { cleanText: '', wasTruncated: false };
+  let cleanText = text.trim();
+  let wasTruncated = false;
+  if (cleanText.length > MAX_INPUT_CHARS) {
+    cleanText = cleanText.slice(0, MAX_INPUT_CHARS);
+    wasTruncated = true;
+  }
+  return { cleanText, wasTruncated };
+}
+
+/**
  * 1. DOCUMENT SIMPLIFICATION ENGINE
- * Raw text -> Structured plain-language sections
  */
 export async function simplifyDocument(rawText) {
+  const { cleanText, wasTruncated } = prepareInputText(rawText);
+
+  if (isGibberishOrLowValue(cleanText)) {
+    return {
+      isLowConfidence: true,
+      documentCategory: 'Unrecognized Input',
+      overallSummary: 'The provided text does not appear to contain enough meaningful medical, legal, or billing document content for a reliable analysis.',
+      warningMessage: 'Please enter a consent form, insurance denial letter, hospital bill, procedure waiver, or other healthcare paperwork.',
+      sections: []
+    };
+  }
+
   if (!aiClient) {
-    return fallbackSimplify(rawText);
+    const res = fallbackSimplify(cleanText);
+    res.wasTruncated = wasTruncated;
+    return res;
   }
 
   const prompt = `
-Analyze the following medical document or letter. Return ONLY valid JSON with this exact structure:
+Analyze the following medical or healthcare document. Return ONLY valid JSON with this exact structure:
 {
-  "documentCategory": "Category name (e.g., Surgical Consent, Insurance Denial Letter, Billing Statement)",
-  "overallSummary": "A reassuring 2-3 sentence summary of what this document is and what the user needs to focus on.",
+  "documentCategory": "Category name (e.g. Surgical Consent, Insurance Denial Letter, Billing Statement, Hospital Paperwork)",
+  "overallSummary": "Reassuring 2-3 sentence summary of what this document is and what the user needs to focus on.",
   "sections": [
     {
       "title": "Section Title or Topic",
@@ -98,7 +133,7 @@ Analyze the following medical document or letter. Return ONLY valid JSON with th
 }
 
 DOCUMENT TEXT:
-${rawText}
+${cleanText}
 `;
 
   try {
@@ -112,30 +147,43 @@ ${rawText}
     });
 
     const parsed = JSON.parse(response.text);
-    return parsed;
+    if (parsed && typeof parsed === 'object') {
+      parsed.wasTruncated = wasTruncated;
+      return parsed;
+    }
+    return fallbackSimplify(cleanText);
   } catch (err) {
     console.error('[Consentia GenAI Engine 1 Error]:', err.message);
-    return fallbackSimplify(rawText);
+    const fallback = fallbackSimplify(cleanText);
+    fallback.wasTruncated = wasTruncated;
+    return fallback;
   }
 }
 
 /**
- * 2. CLAUSE & RISK DETECTION ENGINE
- * Raw text -> Flagged clauses with severity and reasoning
+ * 2. RISK & CLAUSE DETECTION ENGINE
  */
 export async function detectRisks(rawText) {
+  const { cleanText } = prepareInputText(rawText);
+
+  if (isGibberishOrLowValue(cleanText)) {
+    return [];
+  }
+
   if (!aiClient) {
-    return fallbackDetectRisks(rawText);
+    return fallbackDetectRisks(cleanText);
   }
 
   const prompt = `
 Examine the following medical document for clauses that present financial, legal, or procedural risks to a patient.
-Look specifically for:
+Look for:
 - Liability waivers / release of claims
-- Binding arbitration clauses (giving up right to jury trial)
-- Unusual or uncapped financial obligations / guarantor clauses
-- Strict appeal deadlines or forfeiture of rights
+- Binding arbitration clauses
+- Financial obligations & late fees
+- Appeal deadlines or forfeiture of rights
 - Balance billing or out-of-network surprises
+
+Use non-definitive wording (e.g. "May require additional attention", "Consider asking about...", "This clause may affect...").
 
 Return ONLY valid JSON matching this exact structure:
 [
@@ -143,13 +191,13 @@ Return ONLY valid JSON matching this exact structure:
     "clauseType": "Name of clause (e.g. Mandatory Binding Arbitration Clause)",
     "severity": "high" | "medium" | "info",
     "quotedText": "Exact quote from document",
-    "explanation": "Plain language explanation of why this clause is significant or unusual.",
-    "whatHappensIfClicked": "A clear description of the consequence if the patient agrees or misses a deadline."
+    "explanation": "Plain language explanation of why this clause may deserve attention.",
+    "whatHappensIfClicked": "Clear description of potential real-world consequence."
   }
 ]
 
 DOCUMENT TEXT:
-${rawText}
+${cleanText}
 `;
 
   try {
@@ -163,20 +211,28 @@ ${rawText}
     });
 
     const parsed = JSON.parse(response.text);
-    return Array.isArray(parsed) ? parsed : fallbackDetectRisks(rawText);
+    return Array.isArray(parsed) ? parsed : fallbackDetectRisks(cleanText);
   } catch (err) {
     console.error('[Consentia GenAI Engine 2 Error]:', err.message);
-    return fallbackDetectRisks(rawText);
+    return fallbackDetectRisks(cleanText);
   }
 }
 
 /**
- * 3. QUESTION & CHECKLIST GENERATOR
- * Parsed Document + Detected Risks -> Actionable Checklist
+ * 3. QUESTION CHECKLIST GENERATOR
  */
 export async function generateChecklist(rawText, risks = []) {
+  const { cleanText } = prepareInputText(rawText);
+
+  if (isGibberishOrLowValue(cleanText)) {
+    return {
+      summaryTip: "Enter a healthcare document to generate tailored preparation questions.",
+      categories: []
+    };
+  }
+
   if (!aiClient) {
-    return fallbackGenerateChecklist(rawText, risks);
+    return fallbackGenerateChecklist(cleanText, risks);
   }
 
   const risksSummary = JSON.stringify(risks);
@@ -185,7 +241,7 @@ export async function generateChecklist(rawText, risks = []) {
 Based on the medical document text and detected risks below, generate a personalized list of clear, assertive, respectful questions the patient should ask before signing or paying.
 
 DOCUMENT TEXT:
-${rawText}
+${cleanText}
 
 DETECTED RISKS:
 ${risksSummary}
@@ -216,39 +272,51 @@ Return ONLY valid JSON matching this exact structure:
     });
 
     const parsed = JSON.parse(response.text);
-    return parsed;
+    return parsed && parsed.categories ? parsed : fallbackGenerateChecklist(cleanText, risks);
   } catch (err) {
     console.error('[Consentia GenAI Engine 3 Error]:', err.message);
-    return fallbackGenerateChecklist(rawText, risks);
+    return fallbackGenerateChecklist(cleanText, risks);
   }
 }
 
 /**
  * 4. PATIENT RIGHTS SUMMARY GENERATOR
- * Document context -> Relevant general patient rights snapshot
  */
 export async function generatePatientRights(rawText) {
+  const { cleanText } = prepareInputText(rawText);
+
+  if (isGibberishOrLowValue(cleanText)) {
+    return {
+      documentCategory: 'General Educational Info',
+      disclaimer: "General educational information. Applicable rights may depend on jurisdiction, insurance coverage, circumstances, and the specific document.",
+      rightsList: []
+    };
+  }
+
   if (!aiClient) {
-    return fallbackPatientRights(rawText);
+    return fallbackPatientRights(cleanText);
   }
 
   const prompt = `
 Analyze the provided medical text and return a summary of general patient rights relevant to this document type (e.g., Informed Consent, No Surprises Act balance billing protection, right to itemized bills, right to emergency care under EMTALA, right to internal/external insurance appeals).
 
+Include the exact disclaimer: "General educational information. Applicable rights may depend on jurisdiction, insurance coverage, circumstances, and the specific document."
+Do NOT manufacture legal citations or specific case laws.
+
 Return ONLY valid JSON matching this exact structure:
 {
   "documentCategory": "Category of document",
-  "disclaimer": "General patient rights information for educational preparation, not jurisdiction-specific legal advice.",
+  "disclaimer": "General educational information. Applicable rights may depend on jurisdiction, insurance coverage, circumstances, and the specific document.",
   "rightsList": [
     {
       "right": "Name of Patient Right",
-      "details": "Explanation of what this right guarantees to the patient."
+      "details": "Explanation of what this right generally guarantees to the patient."
     }
   ]
 }
 
 DOCUMENT TEXT:
-${rawText}
+${cleanText}
 `;
 
   try {
@@ -262,15 +330,15 @@ ${rawText}
     });
 
     const parsed = JSON.parse(response.text);
-    return parsed;
+    return parsed && parsed.rightsList ? parsed : fallbackPatientRights(cleanText);
   } catch (err) {
     console.error('[Consentia GenAI Engine 4 Error]:', err.message);
-    return fallbackPatientRights(rawText);
+    return fallbackPatientRights(cleanText);
   }
 }
 
 /**
- * What-If Interactive Scenario Explainer
+ * 5. INTERACTIVE SCENARIO EXPLANATION ENGINE ("What Happens If?")
  */
 export async function explainScenario(clause, question) {
   if (!aiClient) {
@@ -278,16 +346,17 @@ export async function explainScenario(clause, question) {
   }
 
   const prompt = `
-The user is asking about a specific consequence or clause in their medical document:
+The user is asking a "What happens if?" scenario question about a specific clause or topic in their medical document:
 Clause/Snippet: "${clause || 'Not specified'}"
 User Question: "${question || 'What happens if I encounter an issue with this?'}"
 
-Provide a plain-language explanation of what happens and practical steps to protect themselves.
+Provide a plain-language explanation of potential consequences and practical steps to protect themselves.
+Use respectful, educational language without giving professional legal or medical advice.
 
 Return ONLY valid JSON:
 {
-  "scenario": "Rephrased question statement",
-  "consequence": "Direct, calm explanation of real-world impact or outcome.",
+  "scenario": "Rephrased user question statement",
+  "consequence": "Direct, calm explanation of real-world outcome.",
   "actionSteps": [
     "Step 1...",
     "Step 2..."
@@ -305,9 +374,10 @@ Return ONLY valid JSON:
       }
     });
 
-    return JSON.parse(response.text);
+    const parsed = JSON.parse(response.text);
+    return parsed && parsed.consequence ? parsed : fallbackExplainScenario(clause, question);
   } catch (err) {
-    console.error('[Consentia What-If Error]:', err.message);
+    console.error('[Consentia GenAI Engine 5 Error]:', err.message);
     return fallbackExplainScenario(clause, question);
   }
 }

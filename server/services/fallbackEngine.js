@@ -1,8 +1,11 @@
 /**
- * Consentia Fallback Heuristic & Rule-based Engine
+ * Consentia Local Heuristic Fallback Engine
  * 
  * Provides robust offline/demo mode intelligence for medical document analysis
- * when GEMINI_API_KEY is absent or when offline resilience is required.
+ * when GEMINI_API_KEY is absent or when API resilience is required.
+ * 
+ * NOTE: This is explicitly documented as a Local Heuristic Fallback Engine
+ * and is distinct from the primary Gemini-powered GenAI integration path.
  */
 
 export const sampleDocuments = {
@@ -103,9 +106,41 @@ Should my account fall into default, I agree to pay all costs of collection, inc
 };
 
 /**
+ * Low-value & Gibberish Detector
+ */
+export function isGibberishOrLowValue(text) {
+  if (!text || typeof text !== 'string') return true;
+  const clean = text.trim();
+  if (clean.length < 15) return true;
+  
+  const lettersOnly = clean.replace(/[^a-zA-Z]/g, '');
+  if (lettersOnly.length < 10) return true;
+
+  // Check unique character ratio for gibberish like "asdfghjkl qwerty 123"
+  const uniqueChars = new Set(lettersOnly.toLowerCase()).size;
+  if (uniqueChars < 4 && lettersOnly.length > 15) return true;
+
+  // Check for lack of standard spaces or common English vowels
+  const vowels = lettersOnly.match(/[aeiouAEIOU]/g);
+  if (!vowels || vowels.length / lettersOnly.length < 0.12) return true;
+
+  return false;
+}
+
+/**
  * Fallback Document Simplifier
  */
 export function fallbackSimplify(text) {
+  if (isGibberishOrLowValue(text)) {
+    return {
+      isLowConfidence: true,
+      documentCategory: 'Unrecognized Input',
+      overallSummary: 'The provided text does not appear to contain enough meaningful medical, legal, or billing document content for a reliable analysis.',
+      warningMessage: 'Please enter a consent form, insurance denial letter, hospital bill, procedure waiver, or other healthcare paperwork.',
+      sections: []
+    };
+  }
+
   const lines = text.split('\n').filter(l => l.trim().length > 0);
   const sections = [];
   let currentTitle = 'Document Summary';
@@ -133,35 +168,35 @@ export function fallbackSimplify(text) {
 
   return {
     documentCategory: detectCategory(text),
-    overallSummary: "This document outlines medical, financial, or legal terms regarding your healthcare. It includes details on authorizations, potential financial responsibilities, and procedural deadlines that require your attention.",
+    overallSummary: "This document outlines medical, financial, or legal terms regarding your healthcare. It includes details on authorizations, potential financial responsibilities, and procedural deadlines that may require your attention.",
     sections
   };
 }
 
 function buildSimplifiedSection(title, raw) {
   let plainText = raw;
-  let takeaway = "Review this section carefully before signing or submitting payment.";
+  let takeaway = "Consider reviewing this section carefully before signing or submitting payment.";
 
   const lower = raw.toLowerCase() + ' ' + title.toLowerCase();
 
   if (lower.includes('arbitration') || lower.includes('jury')) {
     plainText = "This section asks you to give up your right to go to court if something goes wrong. Instead, any dispute would be handled privately by an arbiter.";
-    takeaway = "What this actually means for you: You cannot sue in regular court or join a group lawsuit if medical errors or billing disputes happen.";
+    takeaway = "What this actually means for you: This clause may affect your ability to sue in regular court or join a group lawsuit if medical errors or billing disputes happen.";
   } else if (lower.includes('denied') || lower.includes('not medically necessary') || lower.includes('adverse')) {
     plainText = "The insurance company refused to pay for this medical service because they claim it wasn't proven necessary by previous treatments.";
-    takeaway = "What this actually means for you: You are being held responsible for the bill unless you submit an appeal with your doctor's supporting records within the deadline.";
+    takeaway = "What this actually means for you: You may be held responsible for the bill unless you submit an appeal with your doctor's supporting records within the deadline.";
   } else if (lower.includes('out-of-network') || lower.includes('balance-billed') || lower.includes('remaining patient balance')) {
     plainText = "Even if the hospital was in your insurance network, some doctors who treated you do not take your insurance and are billing you the difference.";
-    takeaway = "What this actually means for you: You may be protected under federal balance billing laws (No Surprises Act) for emergency care. Do not pay without checking protections first.";
+    takeaway = "What this actually means for you: You may be protected under federal balance billing laws (No Surprises Act) for emergency care. Consider checking your protections before paying.";
   } else if (lower.includes('financial responsibility') || lower.includes('unanticipated surgical complications') || lower.includes('guarantor')) {
     plainText = "This states that you agree to pay out of your own pocket for any extra treatments, unexpected complications, or unpaid insurance amounts.";
-    takeaway = "What this actually means for you: If insurance delays or rejects payment, the hospital can charge you directly, including late fees or collection costs.";
+    takeaway = "What this actually means for you: If insurance delays or rejects payment, the hospital may attempt to charge you directly.";
   } else if (lower.includes('authorization') || lower.includes('consent for surgery')) {
     plainText = "You are giving permission to your surgical team to perform the procedure as well as any necessary extra steps during surgery.";
     takeaway = "What this actually means for you: You are consenting to the procedure and authorizing emergency adjustments if complications occur during surgery.";
   } else if (lower.includes('appeal rights') || lower.includes('30 days')) {
     plainText = "You have a right to challenge this insurance denial, but you must act quickly before the strict deadline expires.";
-    takeaway = "What this actually means for you: If you don't submit your appeal within the stated time frame, you lose your right to challenge the denial forever.";
+    takeaway = "What this actually means for you: If you do not submit your appeal within the stated time frame, you may lose your right to challenge the denial.";
   }
 
   return {
@@ -176,6 +211,7 @@ function buildSimplifiedSection(title, raw) {
  * Fallback Risk & Clause Highlighter
  */
 export function fallbackDetectRisks(text) {
+  if (isGibberishOrLowValue(text)) return [];
   const risks = [];
   const lower = text.toLowerCase();
 
@@ -184,48 +220,38 @@ export function fallbackDetectRisks(text) {
       clauseType: 'Binding Arbitration Clause',
       severity: 'high',
       quotedText: extractMatch(text, /arbitration|jury trial/i),
-      explanation: 'Gives up your right to sue in court. Any medical error or billing dispute must be resolved in private arbitration.',
-      whatHappensIfClicked: 'If a dispute occurs, you cannot present your case to a public judge or jury, and arbitration decisions are usually final with limited rights to appeal.'
+      explanation: 'May require resolving medical error or billing disputes through private arbitration rather than public court.',
+      whatHappensIfClicked: 'If a dispute occurs, you may be unable to present your case to a public judge or jury.'
     });
   }
 
   if (lower.includes('30 days') || lower.includes('forfeiture of your appeal') || lower.includes('strict thirty')) {
     risks.push({
-      clauseType: 'Strict Urgent Appeal Deadline',
+      clauseType: 'Urgent Appeal Deadline',
       severity: 'high',
       quotedText: extractMatch(text, /thirty \(30\) calendar days|appeal rights/i),
-      explanation: 'A short 30-day window to file an insurance appeal before the denial becomes final and unchallengeable.',
-      whatHappensIfClicked: 'If you miss the 30-day window by even one day, the $14,850.00 bill becomes permanently your personal obligation.'
+      explanation: 'A short window to file an insurance appeal before the denial becomes final.',
+      whatHappensIfClicked: 'Missing the 30-day window may result in losing your right to challenge the insurance denial.'
     });
   }
 
   if (lower.includes('out-of-network') || lower.includes('balance-billed')) {
     risks.push({
-      clauseType: 'Unusual Out-of-Network Balance Billing',
+      clauseType: 'Potential Out-of-Network Balance Billing',
       severity: 'high',
       quotedText: extractMatch(text, /out-of-network|balance-billed/i),
-      explanation: 'Separate bills from doctors who did not contract with your insurance plan, even at an in-network facility.',
-      whatHappensIfClicked: 'Under the No Surprises Act (effective 2022), balance billing for emergency medical care at in-network facilities is illegal under federal law. You can contest this bill.'
+      explanation: 'Separate bills from doctors who did not contract with your insurance plan.',
+      whatHappensIfClicked: 'Under the No Surprises Act, balance billing for emergency care at in-network facilities is restricted under federal law.'
     });
   }
 
   if (lower.includes('financial responsibility') || lower.includes('assumes full financial') || lower.includes('late finance fee')) {
     risks.push({
-      clauseType: 'Uncapped Financial Responsibility & Late Fees',
+      clauseType: 'Financial Obligation Terms',
       severity: 'medium',
       quotedText: extractMatch(text, /financial responsibility|finance fee|60 days/i),
-      explanation: 'Makes you personally liable for unexpected complications and adds steep monthly interest if insurance delays payment.',
-      whatHappensIfClicked: 'If insurance delays processing past 60 days, you could be billed interest fees for delays caused entirely by the insurer or hospital billing department.'
-    });
-  }
-
-  if (lower.includes('experimental') || lower.includes('not submit a claim')) {
-    risks.push({
-      clauseType: 'Insurance Claim Submission Waiver',
-      severity: 'medium',
-      quotedText: extractMatch(text, /not submit a claim|experimental/i),
-      explanation: 'Prevents you from submitting this expense to insurance for potential out-of-network or deductible credit.',
-      whatHappensIfClicked: 'You forfeit any opportunity to apply these costs toward your health plan deductible or secondary coverage.'
+      explanation: 'May assign personal liability for unexpected complications or unpaid insurance balances.',
+      whatHappensIfClicked: 'If insurance delays processing, the facility may attempt to bill you interest or collection fees.'
     });
   }
 
@@ -234,8 +260,8 @@ export function fallbackDetectRisks(text) {
       clauseType: 'Standard Terms Verification',
       severity: 'info',
       quotedText: text.slice(0, 120) + '...',
-      explanation: 'Standard medical or administrative wording detected. Ensure all fee amounts and provider names match your records.',
-      whatHappensIfClicked: 'Confirming provider credentials and itemized fee breakdowns is recommended before signing.'
+      explanation: 'Standard medical or administrative wording detected. Consider verifying all provider names and fee breakdowns.',
+      whatHappensIfClicked: 'Confirming provider credentials and fee breakdowns is recommended before signing.'
     });
   }
 
@@ -248,38 +274,38 @@ export function fallbackDetectRisks(text) {
 export function fallbackGenerateChecklist(text, risks) {
   const doctorQuestions = [
     "Can you clarify if there are less invasive or alternative treatments before proceeding?",
-    "Are all physicians, anesthesiologists, and lab technicians involved in my care in-network for my specific insurance plan?",
-    "If complications arise during the procedure, will I be informed before non-essential additional interventions are billed?"
+    "Are all physicians, anesthesiologists, and lab technicians involved in my care in-network for my insurance plan?",
+    "Which parts of this consent document should I clarify before the procedure?"
   ];
 
   const billingQuestions = [
-    "Can you provide a comprehensive itemized bill with CPT/HCPCS codes for every line item?",
-    "Does this bill fall under federal No Surprises Act protections for emergency or facility-based out-of-network care?",
-    "Can we establish a interest-free financial hardship payment plan or apply for hospital charity care?"
+    "Can you provide a comprehensive itemized bill with CPT/HCPCS medical codes for every line item?",
+    "Could there be separate out-of-network charges from independent doctors or labs?",
+    "Does this bill fall under federal No Surprises Act protections for emergency care?"
   ];
 
   const insurerQuestions = [
-    "What specific additional medical notes or peer-to-peer documentation does the Medical Review Board require for an expedited Level 1 Appeal?",
-    "What is the exact deadline date for receiving my appeal documentation, and can I get written confirmation of receipt?",
-    "Will this claim be re-evaluated if my physician submits an urgent expedited appeal request?"
+    "What is the exact appeal deadline, and what documentation is required?",
+    "How can I request an expedited internal or external review for this denial?",
+    "Will this claim be re-evaluated if my physician submits additional clinical records?"
   ];
 
   return {
-    summaryTip: "Bring these questions to your next appointment or phone call. Take notes on who you speak with, the date, and call reference numbers.",
+    summaryTip: "Bring these questions to your next appointment or phone call. Take notes on who you speak with and the date.",
     categories: [
       {
         title: "Questions for Your Doctor & Care Team",
-        target: "Doctor / Surgeon",
+        target: "Doctor / Care Team",
         questions: doctorQuestions
       },
       {
         title: "Questions for Hospital Billing Office",
-        target: "Billing Department",
+        target: "Billing Office",
         questions: billingQuestions
       },
       {
-        title: "Questions for Health Insurer / Claims Department",
-        target: "Insurance Representative",
+        title: "Questions for Health Insurer",
+        target: "Health Insurer",
         questions: insurerQuestions
       }
     ]
@@ -295,32 +321,25 @@ export function fallbackPatientRights(text) {
   let rights = [
     {
       right: "Right to Informed Consent & Refusal",
-      details: "You have the moral and legal right to receive a clear explanation of risks, benefits, and alternatives, and to refuse any medical treatment at any time."
+      details: "You generally have the right to receive a clear explanation of risks, benefits, and alternatives, and to refuse proposed treatments."
     },
     {
       right: "Right to an Itemized Bill",
-      details: "You are entitled to a line-by-line itemized receipt listing every medical code (CPT), drug, and supply billed to you or your insurance."
+      details: "You are generally entitled to a line-by-line itemized receipt listing every medical code, medication, and facility charge."
     },
     {
-      right: "Right to Federal Balance Billing Protection (No Surprises Act)",
-      details: "For emergency care or non-emergency services received at an in-network facility from an out-of-network provider, federal law prohibits balance billing above in-network rates."
+      right: "Right to Federal Balance Billing Protections (No Surprises Act)",
+      details: "For emergency care or non-emergency care at in-network facilities by out-of-network providers, federal law generally prohibits balance billing above in-network rates."
     },
     {
-      right: "Right to Appeal Insurance Denials",
-      details: "You have the right to both internal appeals with your insurance provider and independent external reviews by neutral medical reviewers."
+      right: "Right to Insurance Appeals",
+      details: "You generally have the right to file internal appeals with your insurance provider and request independent external reviews."
     }
   ];
 
-  if (category === 'Insurance Denial Letter') {
-    rights.unshift({
-      right: "Right to Expedited Internal & External Review",
-      details: "If your health condition is urgent, you have the right to request a fast-track appeal decision within 72 hours, as well as an independent external review if denied."
-    });
-  }
-
   return {
     documentCategory: category,
-    disclaimer: "These rights represent general patient protections in the United States (including federal laws like EMTALA and the No Surprises Act) and are provided for educational preparation.",
+    disclaimer: "General educational information. Applicable rights may depend on jurisdiction, insurance coverage, circumstances, and the specific document.",
     rightsList: rights
   };
 }
@@ -334,11 +353,11 @@ export function fallbackExplainScenario(clause, question) {
   if (qLower.includes('30 days') || qLower.includes('miss') || qLower.includes('deadline')) {
     return {
       scenario: "What happens if I miss the 30-day appeal window?",
-      consequence: "Your insurance company considers the denial final and unappealable. The hospital or clinic will transfer the entire balance directly to you for out-of-pocket payment.",
+      consequence: "The insurance company may consider the denial final. The provider may then transfer the balance directly to you for out-of-pocket payment.",
       actionSteps: [
-        "Immediately call your ordering physician's office and request an urgent clinical appeal letter.",
+        "Contact your ordering physician's office immediately to request an urgent clinical appeal letter.",
         "Contact the insurer's grievance department to ask if a good-cause extension is permitted.",
-        "Request an itemized bill from the hospital to verify if any billing codes can be re-submitted."
+        "Request an itemized bill from the hospital to verify if any billing codes can be resubmitted."
       ]
     };
   }
@@ -346,18 +365,18 @@ export function fallbackExplainScenario(clause, question) {
   if (qLower.includes('sign') || qLower.includes('refuse') || qLower.includes('arbitration')) {
     return {
       scenario: "What happens if I refuse to sign the arbitration clause?",
-      consequence: "You preserve your constitutional right to take any future malpractice or billing dispute to court. In non-emergency situations, some facilities may ask you to sign an addendum, but emergency facilities CANNOT refuse emergency care under EMTALA.",
+      consequence: "You preserve your option to pursue future disputes in court. In emergency situations, hospitals CANNOT refuse stabilizing emergency care under EMTALA.",
       actionSteps: [
         "Politely cross out the arbitration paragraph on paper consent forms and initial next to it.",
         "State: 'I consent to medical treatment, but I do not consent to mandatory arbitration.'",
-        "If in an emergency department, remember EMTALA law requires them to stabilize you regardless of paperwork disputes."
+        "If in an emergency department, remember EMTALA law requires them to stabilize emergency conditions."
       ]
     };
   }
 
   return {
     scenario: question || "What happens if I encounter an issue with this clause?",
-    consequence: "Signing without clarification can bind you to unexpected out-of-pocket expenses or restrict your rights to dispute billing errors.",
+    consequence: "Signing without clarification may bind you to out-of-pocket expenses or restrict dispute options.",
     actionSteps: [
       "Ask the patient advocate or hospital billing coordinator for written clarification.",
       "Request a temporary 30-day payment hold while you review charges.",

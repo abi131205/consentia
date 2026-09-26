@@ -141,4 +141,4 @@ Consentia is live on Render:
 
 ## 🎥 Demo Video
 
-Demo video: [ADD FINAL VIDEO LINK]
+Demo video: https://www.loom.com/share/cc24b5845637449f8e468103be952e9b

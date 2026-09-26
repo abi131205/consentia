@@ -5,7 +5,7 @@
 @layer base {
   body {
     background-color: #f6f2ea;
-    color: #1e293b;
+    color: #0f172a;
     font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
   }
 
@@ -14,7 +14,30 @@
   }
 }
 
-/* Custom subtle scrollbar */
+/* WAI-ARIA Screen Reader Helper */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+/* Reduced Motion for Accessibility */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Custom accessible scrollbar */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;

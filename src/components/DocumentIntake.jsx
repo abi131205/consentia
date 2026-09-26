@@ -78,43 +78,44 @@ export default function DocumentIntake({ onAnalyze, isLoading, samples = [], cur
   };
 
   return (
-    <div className="w-full space-y-6">
+    <section className="w-full space-y-6" aria-label="Healthcare Document Intake Section">
       
       {/* Intro Heading & Context */}
       <div className="bg-paper-50 p-6 rounded-2xl border border-paper-300/60 shadow-xs space-y-2">
         <h2 className="text-xl sm:text-2xl font-bold font-serif text-slate-900 flex items-center gap-2">
-          <FileText className="w-6 h-6 text-clay-500" />
+          <FileText className="w-6 h-6 text-clay-500" aria-hidden="true" />
           Healthcare Document Intake
         </h2>
-        <p className="text-sm text-slate-700 leading-relaxed max-w-3xl">
+        <p id="intake-instructions" className="text-sm text-slate-800 leading-relaxed max-w-3xl">
           Paste or upload the text of your medical consent form, insurance denial letter, hospital bill, or financial waiver below. Consentia will translate the complex legalese into clear, comforting plain English and highlight important rights and potential risk areas.
         </p>
       </div>
 
       {/* Preset Scenarios for Quick Testing */}
       {samples.length > 0 && (
-        <div className="bg-paper-50/70 p-4 rounded-xl border border-paper-300/50 space-y-3">
+        <div className="bg-paper-50/70 p-4 rounded-xl border border-paper-300/50 space-y-3" role="region" aria-label="Sample Documents">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
-              <BookOpen className="w-3.5 h-3.5 text-sage-600" /> Synthetic Sample Scenarios (1-Click Load)
+            <span className="text-xs font-semibold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+              <BookOpen className="w-3.5 h-3.5 text-sage-600" aria-hidden="true" /> Synthetic Sample Scenarios (1-Click Load)
             </span>
-            <span className="text-xs text-slate-600 font-sans">Click any example to inspect live</span>
+            <span className="text-xs text-slate-700 font-sans">Click any example to inspect live</span>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
             {samples.map((sample) => (
               <button
                 key={sample.id}
                 type="button"
+                aria-label={`Load sample document: ${sample.title}`}
                 onClick={() => {
                   setText(sample.text);
                   if (inputError) setInputError('');
                 }}
-                className="text-left p-3 rounded-lg border border-paper-300/80 bg-paper-50 hover:bg-clay-50 hover:border-clay-500/40 transition-all group"
+                className="text-left p-3 rounded-lg border border-paper-300/80 bg-paper-50 hover:bg-clay-50 hover:border-clay-500/40 focus:ring-2 focus:ring-clay-500 transition-all group"
               >
-                <span className="inline-block text-[10px] font-bold uppercase tracking-wider text-clay-600 bg-clay-100/70 px-2 py-0.5 rounded mb-1">
+                <span className="inline-block text-[10px] font-bold uppercase tracking-wider text-clay-700 bg-clay-100 px-2 py-0.5 rounded mb-1">
                   {sample.category}
                 </span>
-                <p className="text-xs font-semibold text-slate-800 group-hover:text-clay-700 line-clamp-1">
+                <p className="text-xs font-semibold text-slate-900 group-hover:text-clay-700 line-clamp-1">
                   {sample.title}
                 </p>
               </button>
@@ -125,8 +126,8 @@ export default function DocumentIntake({ onAnalyze, isLoading, samples = [], cur
 
       {/* Input Error / Low-Confidence Banner */}
       {(inputError || isLowConfidence) && (
-        <div className="bg-amber-50 border-l-4 border-amber-500 p-4 rounded-r-xl space-y-1 text-xs text-amber-900 flex items-start gap-2.5">
-          <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+        <div className="bg-amber-50 border-l-4 border-amber-500 p-4 rounded-r-xl space-y-1 text-xs text-amber-950 flex items-start gap-2.5" role="alert" aria-live="assertive">
+          <AlertTriangle className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" aria-hidden="true" />
           <div>
             <span className="font-bold block text-sm">
               {inputError ? 'Input Required' : 'Low-Confidence Input Detected'}
@@ -150,30 +151,28 @@ export default function DocumentIntake({ onAnalyze, isLoading, samples = [], cur
       >
         {/* Action Toolbar above Textarea */}
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-paper-200 pb-3">
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-semibold text-slate-700 bg-paper-100 px-2.5 py-1 rounded-md border border-paper-300/40">
-              Primary Intake: Plain Text Paste
-            </span>
+          <label htmlFor="document-text-intake" className="text-xs font-semibold text-slate-800 bg-paper-100 px-2.5 py-1 rounded-md border border-paper-300/60 cursor-pointer">
+            Primary Intake: Plain Text Paste
             {wordCount > 0 && (
-              <span className="text-xs text-slate-500 font-mono">
-                {wordCount} words ({charCount} chars)
+              <span className="ml-2 text-xs text-slate-700 font-mono">
+                ({wordCount} words, {charCount} chars)
               </span>
             )}
-          </div>
+          </label>
 
           <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={handlePasteClipboard}
-              className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg text-slate-700 bg-paper-100 hover:bg-paper-200 border border-paper-300/60 transition-all"
-              title="Paste content from clipboard"
+              aria-label="Paste document text from clipboard"
+              className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg text-slate-800 bg-paper-100 hover:bg-paper-200 focus:ring-2 focus:ring-clay-500 border border-paper-300/60 transition-all"
             >
-              <Clipboard className="w-3.5 h-3.5 text-clay-600" /> Paste Clipboard
+              <Clipboard className="w-3.5 h-3.5 text-clay-600" aria-hidden="true" /> Paste Clipboard
             </button>
 
-            <label className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg text-slate-700 bg-paper-100 hover:bg-paper-200 border border-paper-300/60 transition-all cursor-pointer">
-              <Upload className="w-3.5 h-3.5 text-sage-600" /> Upload File (.txt)
-              <input type="file" accept=".txt,.md,.doc,.docx" onChange={handleFileUpload} className="hidden" />
+            <label htmlFor="file-upload-input" className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg text-slate-800 bg-paper-100 hover:bg-paper-200 focus:ring-2 focus:ring-clay-500 border border-paper-300/60 transition-all cursor-pointer">
+              <Upload className="w-3.5 h-3.5 text-sage-600" aria-hidden="true" /> Upload File (.txt)
+              <input id="file-upload-input" type="file" accept=".txt,.md,.doc,.docx" onChange={handleFileUpload} aria-label="Upload document file" className="hidden" />
             </label>
 
             {currentText && (
@@ -183,10 +182,10 @@ export default function DocumentIntake({ onAnalyze, isLoading, samples = [], cur
                   setText('');
                   setInputError('');
                 }}
-                className="flex items-center gap-1 text-xs font-medium px-2.5 py-1.5 rounded-lg text-slate-600 hover:text-red-700 hover:bg-red-50 transition-all"
-                title="Clear text"
+                aria-label="Clear document text"
+                className="flex items-center gap-1 text-xs font-medium px-2.5 py-1.5 rounded-lg text-slate-700 hover:text-red-700 hover:bg-red-50 focus:ring-2 focus:ring-red-500 transition-all"
               >
-                <Trash2 className="w-3.5 h-3.5" /> Clear
+                <Trash2 className="w-3.5 h-3.5" aria-hidden="true" /> Clear
               </button>
             )}
           </div>
@@ -194,21 +193,24 @@ export default function DocumentIntake({ onAnalyze, isLoading, samples = [], cur
 
         {/* Text Input Area */}
         <textarea
+          id="document-text-intake"
+          aria-describedby="intake-instructions"
+          aria-label="Medical document text input"
           value={currentText}
           onChange={handleTextChange}
           placeholder="Paste your medical consent form, insurance denial letter, hospital bill, or financial waiver text here... 
 
 For live demo entry, you can paste fresh unformatted text, or click any sample scenario above."
           rows={12}
-          className="w-full bg-paper-50 text-slate-900 text-sm leading-relaxed p-4 rounded-xl border border-paper-300/70 focus:outline-none focus:ring-2 focus:ring-clay-500/30 focus:border-clay-500 placeholder-slate-400 font-sans resize-y transition-all"
+          className="w-full bg-paper-50 text-slate-900 text-sm leading-relaxed p-4 rounded-xl border border-paper-300 focus:outline-2 focus:outline-clay-600 focus:ring-2 focus:ring-clay-500/40 placeholder-slate-500 font-sans resize-y transition-all"
         />
 
         {/* Bottom Privacy & Submission Action */}
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pt-2">
-          <div className="flex items-start gap-2 text-xs text-slate-500 max-w-xl">
-            <ShieldCheck className="w-4 h-4 text-sage-600 shrink-0 mt-0.5" />
+          <div className="flex items-start gap-2 text-xs text-slate-700 max-w-xl">
+            <ShieldCheck className="w-4 h-4 text-sage-600 shrink-0 mt-0.5" aria-hidden="true" />
             <span>
-              <strong>Privacy Protection:</strong> Remove personal identifiers (such as SSNs or account numbers) before uploading documents when possible. Consentia processes document text in transient session memory.
+              <strong className="text-slate-900">Privacy Protection:</strong> Remove personal identifiers (such as SSNs or account numbers) before uploading documents when possible. Consentia processes document text in transient session memory.
             </span>
           </div>
 
@@ -216,27 +218,28 @@ For live demo entry, you can paste fresh unformatted text, or click any sample s
             type="button"
             disabled={isLoading}
             onClick={handleAnalyzeClick}
-            className={`w-full sm:w-auto flex items-center justify-center gap-2 px-7 py-3 rounded-xl font-semibold text-sm shadow-md transition-all shrink-0 ${
+            aria-label="Analyze document with GenAI"
+            className={`w-full sm:w-auto flex items-center justify-center gap-2 px-7 py-3 rounded-xl font-semibold text-sm shadow-md transition-all shrink-0 focus:ring-2 focus:ring-clay-600 ${
               isLoading
-                ? 'bg-paper-300 text-slate-500 cursor-not-allowed shadow-none'
+                ? 'bg-paper-300 text-slate-600 cursor-not-allowed shadow-none'
                 : 'bg-clay-500 text-paper-50 hover:bg-clay-600 hover:shadow-lg hover:shadow-clay-500/20 active:scale-[0.99]'
             }`}
           >
             {isLoading ? (
               <>
-                <div className="w-4 h-4 border-2 border-paper-50 border-t-transparent rounded-full animate-spin" />
+                <div className="w-4 h-4 border-2 border-paper-50 border-t-transparent rounded-full animate-spin" aria-hidden="true" />
                 Analyzing Document with GenAI...
               </>
             ) : (
               <>
-                <Sparkles className="w-4 h-4" />
+                <Sparkles className="w-4 h-4" aria-hidden="true" />
                 Analyze Document & Translate
-                <ArrowRight className="w-4 h-4 ml-1" />
+                <ArrowRight className="w-4 h-4 ml-1" aria-hidden="true" />
               </>
             )}
           </button>
         </div>
       </div>
-    </div>
+    </section>
   );
 }

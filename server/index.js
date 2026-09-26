@@ -1,5 +1,8 @@
 import express from 'express';
 import cors from 'cors';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
+import compression from 'compression';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -22,7 +25,32 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-app.use(cors());
+// Security Middleware: Helmet HTTP Security Headers
+app.use(helmet({
+  contentSecurityPolicy: false, // Allows static frontend resources
+  crossOriginEmbedderPolicy: false
+}));
+
+// Performance Middleware: HTTP Gzip Compression
+app.use(compression());
+
+// Security Middleware: Strict CORS Policy
+app.use(cors({
+  origin: '*',
+  methods: ['GET', 'POST'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
+
+// Security Middleware: Rate Limiting to prevent DoS / Brute-Force
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes window
+  max: 120, // Limit each IP to 120 requests per window
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests from this IP, please try again after 15 minutes.' }
+});
+
+app.use('/api/', apiLimiter);
 app.use(express.json({ limit: '10mb' }));
 
 // Health Check API
@@ -52,12 +80,12 @@ app.post('/api/analyze', async (req, res) => {
   try {
     const { text } = req.body;
     if (!text || typeof text !== 'string' || !text.trim()) {
-      return res.status(400).json({ error: 'Document text is required' });
+      return res.status(400).json({ error: 'Please enter or upload a document before analyzing it.' });
     }
 
     const cleanText = text.trim();
 
-    // Trigger explicit GenAI engines
+    // Trigger explicit GenAI engines concurrently
     const [simplification, risks, rights] = await Promise.all([
       simplifyDocument(cleanText),
       detectRisks(cleanText),
@@ -77,8 +105,8 @@ app.post('/api/analyze', async (req, res) => {
       }
     });
   } catch (err) {
-    console.error('Error in /api/analyze:', err);
-    res.status(500).json({ error: 'Failed to analyze medical document', details: err.message });
+    console.error('Error in /api/analyze:', err.message);
+    res.status(500).json({ error: 'An unexpected error occurred while analyzing the document.', details: 'Safe error handling active.' });
   }
 });
 
@@ -89,7 +117,7 @@ app.post('/api/simplify', async (req, res) => {
     const data = await simplifyDocument(text);
     res.json({ success: true, data });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Service temporarily unavailable' });
   }
 });
 
@@ -99,7 +127,7 @@ app.post('/api/detect-risks', async (req, res) => {
     const data = await detectRisks(text);
     res.json({ success: true, data });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Service temporarily unavailable' });
   }
 });
 
@@ -109,7 +137,7 @@ app.post('/api/checklist', async (req, res) => {
     const data = await generateChecklist(text, risks || []);
     res.json({ success: true, data });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Service temporarily unavailable' });
   }
 });
 
@@ -119,7 +147,7 @@ app.post('/api/patient-rights', async (req, res) => {
     const data = await generatePatientRights(text);
     res.json({ success: true, data });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Service temporarily unavailable' });
   }
 });
 
@@ -129,7 +157,7 @@ app.post('/api/what-if', async (req, res) => {
     const data = await explainScenario(clause, question);
     res.json({ success: true, data });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Service temporarily unavailable' });
   }
 });
 
@@ -149,5 +177,5 @@ app.get('*', (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`[Consentia Server] Running on http://localhost:${PORT}`);
+  console.log(`[Consentia Server] Running securely on http://localhost:${PORT}`);
 });

@@ -113,16 +113,20 @@ export function isGibberishOrLowValue(text) {
   const clean = text.trim();
   if (clean.length < 15) return true;
   
+  const lower = clean.toLowerCase();
+  
+  // Check for common keyboard mash patterns or repetitive letters
+  if (lower.includes('qwerty') || lower.includes('asdfghjkl') || lower.includes('zxcvbn')) return true;
+
+  const words = clean.split(/\s+/).filter(w => w.length > 0);
+  if (words.length < 3) return true;
+
+  // Check unique character ratio for repeated junk characters
   const lettersOnly = clean.replace(/[^a-zA-Z]/g, '');
-  if (lettersOnly.length < 10) return true;
+  if (lettersOnly.length < 8) return true;
 
-  // Check unique character ratio for gibberish like "asdfghjkl qwerty 123"
   const uniqueChars = new Set(lettersOnly.toLowerCase()).size;
-  if (uniqueChars < 4 && lettersOnly.length > 15) return true;
-
-  // Check for lack of standard spaces or common English vowels
-  const vowels = lettersOnly.match(/[aeiouAEIOU]/g);
-  if (!vowels || vowels.length / lettersOnly.length < 0.12) return true;
+  if (uniqueChars < 4) return true;
 
   return false;
 }
